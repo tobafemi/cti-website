@@ -20,7 +20,10 @@
     initHeader();
     initMenu();
     initReveal();
-    initCorridor();
+    initMap();
+    initReviewBar();
+    initTips();
+    initCtaBar();
     initInterestLinks();
     initForm();
   });
@@ -94,53 +97,167 @@
     });
   }
 
-  /* ---------- Hero grid: country names on hover/tap, plus one gentle sweep on load ---------- */
-  function initCorridor() {
-    var grid = document.querySelector(".corridor-grid");
-    var label = document.getElementById("corridor-country");
-    var cells = document.querySelectorAll(".corridor-grid span");
-    if (!grid || !cells.length) return;
+  /* ---------- Hero map: country names on hover/tap, and a slow cycle of
+     highlighted countries so the map feels alive ---------- */
+  function initMap() {
+    var map = document.querySelector(".map");
+    var label = document.getElementById("map-country");
+    if (!map) return;
+    var countries = Array.prototype.slice.call(map.querySelectorAll(".m-af path[data-name]"));
+    if (!countries.length) return;
 
     var canHover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
-    var hint = canHover ? "Hover over a code" : "Tap a code";
+    var hint = canHover ? "Hover over a country" : "Tap a country";
     var picked = null;
+    var hovering = null;
 
-    function show(cell) {
+    function setLabel(text, active) {
       if (!label) return;
-      if (cell) {
-        label.textContent = cell.textContent + " · " + cell.getAttribute("data-name");
-        label.classList.add("is-active");
-      } else if (picked) {
-        show(picked);
-      } else {
-        label.textContent = hint;
-        label.classList.remove("is-active");
-      }
+      label.textContent = text;
+      label.classList.toggle("is-active", !!active);
     }
-    show(null);
+    function current() {
+      var el = hovering || picked;
+      if (el) setLabel(el.getAttribute("data-name"), true);
+      else setLabel(hint, false);
+    }
+    current();
 
-    cells.forEach(function (cell) { cell.title = cell.getAttribute("data-name"); });
-    grid.addEventListener("mouseover", function (e) {
-      var cell = e.target.closest("span[data-name]");
-      if (cell) show(cell);
+    map.addEventListener("mouseover", function (e) {
+      var el = e.target.closest && e.target.closest("path[data-name]");
+      if (el && el.closest(".m-af")) { hovering = el; current(); }
     });
-    grid.addEventListener("mouseleave", function () { show(null); });
-    grid.addEventListener("click", function (e) {
-      var cell = e.target.closest("span[data-name]");
-      if (!cell) return;
+    map.addEventListener("mouseleave", function () { hovering = null; current(); });
+    map.addEventListener("click", function (e) {
+      var el = e.target.closest && e.target.closest(".m-af path[data-name]");
+      if (!el) return;
       if (picked) picked.classList.remove("is-picked");
-      picked = picked === cell ? null : cell;
+      picked = picked === el ? null : el;
       if (picked) picked.classList.add("is-picked");
-      show(picked);
+      current();
     });
 
     if (reduceMotion) return;
-    cells.forEach(function (cell, i) {
-      setTimeout(function () {
-        cell.classList.add("is-lit");
-        setTimeout(function () { cell.classList.remove("is-lit"); }, 380);
-      }, 500 + i * 32);
+
+    // Swap the fixed highlights for a gentle cycle through all 54 countries.
+    var accents = ["a1", "a2", "a3", "a4"];
+    countries.forEach(function (c) { accents.forEach(function (a) { c.classList.remove(a); }); });
+    var order = countries.slice();
+    for (var i = order.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+    }
+    var lit = [];
+    var n = 0;
+    function step() {
+      if (document.hidden) return;
+      var el = order[n % order.length];
+      var acc = accents[n % accents.length];
+      n++;
+      el.classList.add(acc);
+      lit.push([el, acc]);
+      if (lit.length > 5) {
+        var old = lit.shift();
+        old[0].classList.remove(old[1]);
+      }
+    }
+    for (var k = 0; k < 5; k++) step();
+    setInterval(step, 1400);
+  }
+
+  /* ---------- Mobile sticky "Register" bar: shows after the hero,
+     hides while the contact form is on screen ---------- */
+  function initCtaBar() {
+    var bar = document.getElementById("cta-bar");
+    var hero = document.querySelector(".hero");
+    var contact = document.getElementById("contact");
+    if (!bar || !hero || !contact || !("IntersectionObserver" in window)) return;
+    bar.hidden = false;
+    var pastHero = false, atContact = false;
+    function update() {
+      var on = pastHero && !atContact;
+      bar.classList.toggle("is-on", on);
+      document.body.classList.toggle("has-cta-bar", on);
+    }
+    new IntersectionObserver(function (e) { pastHero = !e[0].isIntersecting; update(); }).observe(hero);
+    new IntersectionObserver(function (e) { atContact = e[0].isIntersecting; update(); }, { rootMargin: "0px 0px -20% 0px" }).observe(contact);
+  }
+
+  /* ---------- Chart tooltips: any element with data-tip ---------- */
+  function initTips() {
+    var items = document.querySelectorAll("[data-tip]");
+    if (!items.length) return;
+    var tip = document.createElement("div");
+    tip.className = "tip";
+    tip.setAttribute("role", "tooltip");
+    tip.setAttribute("aria-hidden", "true");
+    document.body.appendChild(tip);
+    function place(x, y) {
+      var w = tip.offsetWidth, h = tip.offsetHeight;
+      var left = Math.min(Math.max(8, x - w / 2), window.innerWidth - w - 8);
+      var top = y - h - 12;
+      if (top < 8) top = y + 16;
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
+    }
+    function show(el, x, y) {
+      tip.textContent = el.getAttribute("data-tip");
+      tip.classList.add("is-on");
+      if (x === undefined) {
+        var r = el.getBoundingClientRect();
+        x = r.left + r.width / 2; y = r.top;
+      }
+      place(x, y);
+    }
+    function hide() { tip.classList.remove("is-on"); }
+    items.forEach(function (el) {
+      el.setAttribute("aria-label", el.getAttribute("data-tip"));
+      el.addEventListener("mousemove", function (e) { show(el, e.clientX, e.clientY); });
+      el.addEventListener("mouseleave", hide);
+      el.addEventListener("focus", function () { show(el); });
+      el.addEventListener("blur", hide);
+      el.addEventListener("click", function () { show(el); });
     });
+    window.addEventListener("scroll", hide, { passive: true });
+  }
+
+  /* ---------- Colour option switcher (review copies only) ---------- */
+  function initReviewBar() {
+    // Set to false once the team has picked an option (and set data-theme in the HTML).
+    var SHOW_THEME_SWITCHER = true;
+    var show = SHOW_THEME_SWITCHER || isPreview;
+    try { show = show || new URLSearchParams(location.search).has("review"); } catch (e) {}
+    if (!show) return;
+    var themes = [["a", "A · Light"], ["b", "B · Hybrid"], ["c", "C · Dark"]];
+    var bar = document.createElement("div");
+    bar.className = "review-bar";
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", "Colour option");
+    var lab = document.createElement("span");
+    lab.textContent = "Colour option";
+    bar.appendChild(lab);
+    themes.forEach(function (t) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = t[1];
+      b.setAttribute("data-theme", t[0]);
+      bar.appendChild(b);
+    });
+    function sync() {
+      var cur = root.getAttribute("data-theme");
+      bar.querySelectorAll("button").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.getAttribute("data-theme") === cur));
+      });
+    }
+    bar.addEventListener("click", function (e) {
+      var b = e.target.closest("button");
+      if (!b) return;
+      root.setAttribute("data-theme", b.getAttribute("data-theme"));
+      try { localStorage.setItem("cti-theme", b.getAttribute("data-theme")); } catch (err) {}
+      sync();
+    });
+    sync();
+    document.body.appendChild(bar);
   }
 
   /* ---------- Audience buttons preselect the form ---------- */
@@ -194,7 +311,6 @@
 
     var rules = {
       "f-name": function (v) { return v ? "" : "Enter your full name"; },
-      "f-org": function (v) { return v ? "" : "Enter your organisation"; },
       "f-email": function (v) {
         if (!v) return "Enter your email address";
         return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? "" : "Enter an email address like name@company.com";
@@ -278,25 +394,15 @@
 
       if (isPreview) { showSuccess(); return; }
 
-      // Trim values before sending.
-      var data = new FormData(form);
-      Array.from(data.keys()).forEach(function (k) {
-        var v = data.get(k);
-        if (typeof v === "string") data.set(k, v.trim());
+      // Trim values and send as JSON to the contact function.
+      var data = {};
+      new FormData(form).forEach(function (v, k) { data[k] = typeof v === "string" ? v.trim() : v; });
+      var endpoint = (form.getAttribute("data-endpoint") || "/api/contact").trim();
+      var request = fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(data)
       });
-
-      var endpoint = (form.getAttribute("data-endpoint") || "").trim();
-      var request = endpoint
-        ? fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(Object.fromEntries(data))
-          })
-        : fetch("/", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams(data).toString()
-          });
 
       submit.disabled = true;
       submit.textContent = "Sending…";
@@ -306,8 +412,9 @@
         .catch(function () {
           alertBox.hidden = false;
           submit.disabled = false;
-          submit.textContent = "Send message";
+          submit.textContent = "Send";
         });
     });
   }
 })();
+
