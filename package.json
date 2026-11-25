@@ -1,0 +1,8 @@
+{
+  "name": "cti-website",
+  "private": true,
+  "description": "CTI website: static pages plus one Vercel function for the contact form",
+  "dependencies": {
+    "nodemailer": "^10.6.1"
+  }
+}
